@@ -34,13 +34,13 @@ def path_to_dir(path):
 def createParser ():
     # Создаем класс парсера
     parser = argparse.ArgumentParser(
-            prog = 'gitRepoInfoCreator',
+            prog = 'buildInfoCreator',
             description = '''''',
             epilog = '''Лизин Александр (sogimu), Email: sogimu@nxt.ru, 2017''',
             add_help = True
             )
  
-    parser.add_argument ("-f", "--file-name-to-fill", type=path_creatable, default="repoInfo.hpp", required=False, help = 'Имя файла в который запишется структура на языке C++ с информацией о git-репозитории. По-умолчанию: ./repInfo.hpp')
+    parser.add_argument ("-f", "--file-name-to-fill", type=path_creatable, default="buildInfo.hpp", required=False, help = 'Имя файла в который запишется структура на языке C++ с информацией о сборке. По-умолчанию: ./buildInfo.hpp')
     parser.add_argument ("-d", "--path-to-repo", type=path_to_dir, default=".", required=False, help = 'Путь к папке с git-репозитарием. По-умолчанию: .')
     parser.add_argument ("-b", "--build-id",     type=str, required=False, help = 'ID сборки')
     parser.add_argument ("-o", "--os",           type=str, required=False, help = 'Информация о ОС')
@@ -72,7 +72,7 @@ class cd:
         try:
             os.chdir(self.newPath)
         except OSError:
-            raise Exception(bcolors.FAIL + "Path: {0}. No such file or directory!".format(self.newPath) + bcolors.ENDC)
+            raise Exception(bcolors.FAIL + "Путь: {0}. Путь не найден!".format(self.newPath) + bcolors.ENDC)
 
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
@@ -117,8 +117,7 @@ def getCurrentCommitInfo():
     branch = "";
     shortHash = "-"
     try:
-        output = run("git branch -v".format())      
-
+        output = run("git branch -v".format())
         lines = output.split('\n')
         for line in lines:
             words = line.split(' ')
@@ -134,7 +133,7 @@ def getCurrentCommitStatus():
     changedFiles = [];
     untrackedFiles = []
     try:
-        output = run("git status --porcelain".format())     
+        output = run("git status --porcelain".format())
 
         lines = output.split('\n')
         for line in lines:
@@ -161,7 +160,6 @@ def getCurrentCommitTag():
 class PlatformInfo:
     def osName(self):
         return platform.system()
-    
     def distName(self):
         distName = "None_None"
         if self.osName() == "Linux":
@@ -174,11 +172,17 @@ class PlatformInfo:
         return self.osName() + '_' + self.distName()
 
 template = """#pragma once
-#include <vector>
+/*
+Не пытайтесь редактировать этот файл. Любые изменения сделаные в этом файле будут потеряны!
+*/
 
-struct RepoInfo
+#include <vector>
+#include <string>
+#include <cstring>
+
+struct BuildInfo
 {
-    RepoInfo()
+    BuildInfo()
     {
         shortHash = "%s";
         branch = "%s";
@@ -199,6 +203,76 @@ struct RepoInfo
     const char * dateTime;
     std::vector<const char *> changedFiles;
     std::vector<const char *> untrackedFiles;
+
+    std::string info()
+    {
+        std::string versionInfo = "";
+        versionInfo += withRightPad(u8"Короткий хеш:", 24, ' ') + shortHash + '\\n';
+        versionInfo += withRightPad(u8"Ветка:", 24, ' ')        + branch + '\\n';
+        versionInfo += withRightPad(u8"Метка:", 24, ' ')        + tag + '\\n';
+        versionInfo += withRightPad(u8"Номер сборки:", 24, ' ') + buildId + '\\n';
+        versionInfo += withRightPad(u8"ОС:", 24, ' ') + os + '\\n';
+        versionInfo += withRightPad(u8"Компилятор:", 24, ' ') + compiler + '\\n';
+        versionInfo += withRightPad(u8"Дата и время:", 24, ' ') + dateTime + '\\n';
+
+        writeList(versionInfo, u8"Измененные файлы:", changedFiles);
+        writeList(versionInfo, u8"Не отслеживаемые файлы:", untrackedFiles);
+        return versionInfo;
+    }
+
+private:
+    std::string withRightPad(std::string keyName, uint width, char c) const
+    {
+        uint keyNameLength = strlen_utf8(keyName);
+        int additionSize = (int)width-(int)keyNameLength;
+
+        std::string result = keyName;
+
+        if (additionSize > 0)
+        {
+            for (int i=0; i < additionSize; i++)
+            {
+                result += c;
+            }
+        }
+        return result;
+    };
+
+    void writeList(std::string & target, std::string preamble, std::vector<const char *> & list) const
+    {
+        bool isFirstLine = true;
+        for(const char * file : list)
+        {
+            if (isFirstLine)
+            {
+                if (file == std::string(""))
+                {
+                    target += withRightPad(preamble, 24, ' ') + "-\\n";
+                }
+                else
+                {
+                    target += withRightPad(preamble, 24, ' ') + file + "\\n";
+
+                }
+                isFirstLine = false;
+            }
+            else
+            {
+                target += withRightPad(" ", 24, ' ') + file + "\\n";
+            }
+        }
+    };
+
+    std::size_t strlen_utf8(const std::string & str) const
+    {
+        std::size_t length = 0;
+        for (char c : str) {
+            if ((c & 0xC0) != 0x80) {
+                ++length;
+            }
+        }
+        return length;
+    }
 };"""
 
 if __name__ == '__main__':
@@ -236,16 +310,16 @@ if __name__ == '__main__':
         fullPathToFile = os.path.join(namespace.path_to_repo, namespace.file_name_to_fill)
 
         if namespace.dry_run == True:
-            sys.stdout.write("\n" + bcolors.HEADER + "The file %s will be updated by that text:" % (os.path.abspath(fullPathToFile)) + bcolors.ENDC)
+            sys.stdout.write("\n" + bcolors.HEADER + "Файл %s будет обновлен следующим текстом:" % (os.path.abspath(fullPathToFile)) + bcolors.ENDC)
             sys.stdout.write("\n" + bcolors.BOLD + "%s\n" % (result) + bcolors.ENDC)
             sys.stdout.flush()
         elif result != getFileText(fullPathToFile):
             writeToFile(result, fullPathToFile)
             sys.stdout.write("\n" + bcolors.BOLD + "%s\n" % (result) + bcolors.ENDC)
-            sys.stdout.write("\n" + bcolors.OKGREEN + "The file %s updated.\n" % os.path.abspath(fullPathToFile) + bcolors.ENDC)
+            sys.stdout.write("\n" + bcolors.OKGREEN + "Файл %s обновлен.\n" % os.path.abspath(fullPathToFile) + bcolors.ENDC)
             sys.stdout.flush()
         else:
-            sys.stdout.write("\n" + bcolors.OKGREEN + "File %s is actual. No changes.\n" % os.path.abspath(fullPathToFile) + bcolors.ENDC)
+            sys.stdout.write("\n" + bcolors.OKGREEN + "Файл %s акктуален. Нет изменений.\n" % os.path.abspath(fullPathToFile) + bcolors.ENDC)
             sys.stdout.flush()
 
 
